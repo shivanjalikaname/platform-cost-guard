@@ -1,0 +1,25 @@
+# cost-guard settings. Every key is optional; unknown keys are rejected so typos
+# don't silently fall back to defaults.
+
+regions = ["us-east-1", "eu-west-1"]
+
+# Resources with this tag set to true/yes/1 are never reported.
+keep_tag = "cost-guard:keep"
+
+# An instance is idle if its daily average CPU stayed under this for idle_days.
+idle_cpu_percent = 5.0
+idle_days = 14
+
+snapshot_age_days = 90
+stopped_days = 30
+
+# Leave empty to run all checks.
+checks = []
+
+# Override list prices for your region or discount (USD).
+[prices]
+# ebs_gp3 = 0.088
+# snapshot = 0.05
+
+[instance_prices]
+# "t4g.medium" = 0.0336
