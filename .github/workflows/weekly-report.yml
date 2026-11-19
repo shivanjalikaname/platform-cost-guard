@@ -1,0 +1,65 @@
+name: weekly-cost-report
+
+# Runs every Monday 06:00 UTC against a real account, using short-lived OIDC
+# credentials. Nothing to store: set the repository *variable* AWS_ROLE_ARN to the
+# role created by terraform/github-oidc-role. Optionally add the *secret*
+# SLACK_WEBHOOK_URL. Without AWS_ROLE_ARN the job is skipped (e.g. on forks).
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      fail_over:
+        description: "Fail the run if monthly waste is over this many USD (blank = never)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write  # needed to request the OIDC token, nothing else
+
+jobs:
+  report:
+    if: ${{ vars.AWS_ROLE_ARN != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install .
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          role-session-name: cost-guard-${{ github.run_id }}
+          aws-region: us-east-1
+
+      - name: Scan
+        id: scan
+        env:
+          FAIL_OVER: ${{ inputs.fail_over }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          args=(-c examples/cost-guard.toml -f markdown -o report.md)
+          [ -n "$FAIL_OVER" ] && args+=(--fail-over "$FAIL_OVER")
+          [ -n "$SLACK_WEBHOOK_URL" ] && args+=(--slack)
+          set +e
+          cost-guard "${args[@]}"
+          rc=$?
+          set -e
+          cat report.md >> "$GITHUB_STEP_SUMMARY"
+          cost-guard -c examples/cost-guard.toml -f json -o report.json || true
+          exit $rc
+
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cost-report-${{ github.run_id }}
+          path: report.*
+          retention-days: 30
+          if-no-files-found: ignore
